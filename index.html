@@ -769,6 +769,9 @@ footer {
 
 /* ── WAITLIST MODAL ─────────────────────────────── */
 #waitlist-modal {
+  /* The global reset (* { margin:0 }) removes the UA margin:auto that centers <dialog>. */
+  position:fixed; inset:0; margin:auto;
+  height:fit-content; max-height:calc(100dvh - 32px); overflow-y:auto;
   border:none; padding:0; background:transparent;
   max-width:480px; width:calc(100% - 48px);
   border-radius:var(--r-xl);
@@ -790,6 +793,7 @@ footer {
   transition:color 0.2s;
 }
 .modal-close:hover { color:var(--fg); }
+.modal-close:focus:not(:focus-visible) { outline:none; }
 .modal-title { font-size:22px; font-weight:800; letter-spacing:-0.5px; margin-bottom:8px; }
 .modal-sub { font-size:14px; color:var(--fg-2); margin-bottom:28px; }
 .modal-form { display:flex; flex-direction:column; gap:12px; }

@@ -1503,7 +1503,8 @@ footer {
     <div class="modal-success" id="modal-success">
       <div class="modal-success-icon">🎉</div>
       <h4>¡Listo! Estás en la lista.</h4>
-      <p>Te avisaremos cuando sea tu turno de acceder a FiMU.</p>
+      <p id="modal-success-text">Te avisaremos cuando sea tu turno de acceder a FiMU.</p>
+      <a id="modal-beta-link" class="modal-submit" href="https://app.fimu.cl/bienvenida?ref=waitlist" style="display:none;margin-top:16px;text-decoration:none;text-align:center;">Probar la beta ahora →</a>
     </div>
   </div>
 </dialog>
@@ -1665,8 +1666,15 @@ async function submitWaitlist(e) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
-    const json = await res.json();
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || 'Error al enviar');
+    if (json.betaUrl) {
+      const link = document.getElementById('modal-beta-link');
+      link.href = json.betaUrl;
+      link.style.display = 'block';
+      document.getElementById('modal-success-text').textContent =
+        'La beta ya está abierta: crea tu cuenta y sube tu primer examen hoy.';
+    }
     document.getElementById('modal-form-wrap').style.display = 'none';
     document.getElementById('modal-success').style.display = 'block';
   } catch (err) {

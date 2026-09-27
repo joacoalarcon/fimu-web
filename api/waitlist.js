@@ -2,7 +2,8 @@
 //
 // Saves each signup to every configured destination and succeeds if at least
 // one of them stored it:
-//   - Supabase table `public.waitlist` (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY)
+//   - Supabase table `public.waitlist` (works with the public anon key by
+//     default; SUPABASE_SERVICE_ROLE_KEY enables upserts)
 //   - Google Sheet via Apps Script web app (APPS_SCRIPT_URL)
 // Optionally sends a confirmation email with Resend (RESEND_API_KEY).
 // Failures are logged with their real cause (Vercel → Logs).
@@ -27,24 +28,33 @@ function betaUrlFor(email) {
   return `${APP_URL}/auth?mode=signup&ref=waitlist&email=${encodeURIComponent(email)}`;
 }
 
-async function saveToSupabase(entry) {
-  const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) return null; // not configured
+// Public values of the FiMU Supabase project (same ones shipped in the app
+// bundle). The anon key can only INSERT into `waitlist` thanks to its RLS policy.
+const DEFAULT_SUPABASE_URL = 'https://syoubvatmmybzszrgsyb.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_A4M6bwEKynbAPfFrgEgAow_XFhxR1Xt';
 
-  const r = await fetch(`${url.replace(/\/$/, '')}/rest/v1/waitlist?on_conflict=email`, {
+async function saveToSupabase(entry) {
+  const url = (process.env.SUPABASE_URL || DEFAULT_SUPABASE_URL).replace(/\/$/, '');
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const key = serviceKey || process.env.SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY;
+
+  const r = await fetch(`${url}/rest/v1/waitlist${serviceKey ? '?on_conflict=email' : ''}`, {
     method: 'POST',
     headers: {
       apikey: key,
-      Authorization: `Bearer ${key}`,
+      // New sb_publishable_/sb_secret_ keys go only in `apikey`; legacy JWT keys also as Bearer.
+      ...(key.split('.').length === 3 ? { Authorization: `Bearer ${key}` } : {}),
       'Content-Type': 'application/json',
-      // Re-submitting the same email updates the row instead of failing.
-      Prefer: 'resolution=merge-duplicates,return=minimal',
+      // With the service role, re-submitting an email updates the row.
+      Prefer: serviceKey ? 'resolution=merge-duplicates,return=minimal' : 'return=minimal',
     },
     body: JSON.stringify(entry),
   });
-  if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0, 300)}`);
-  return true;
+  if (r.ok) return true;
+  const text = await r.text();
+  // Anon inserts can't upsert: an already-registered email is still a success.
+  if (r.status === 409 || text.includes('23505')) return true;
+  throw new Error(`Supabase ${r.status}: ${text.slice(0, 300)}`);
 }
 
 async function saveToSheet(entry) {
@@ -145,9 +155,6 @@ export default async function handler(req, res) {
   const saved = results.some((r) => r.status === 'fulfilled' && r.value === true);
   const configured = results.some((r) => r.status === 'rejected' || r.value !== null);
 
-  if (!configured) {
-    console.error('waitlist: no destination configured (set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY or APPS_SCRIPT_URL)');
-  }
   if (!saved) {
     return res.status(configured ? 502 : 500).json({ error: 'Error al guardar. Intenta de nuevo.' });
   }
